@@ -2,8 +2,8 @@
 
 from enum import Enum
 from typing import Dict, Optional, Any, List
-from core.audit import AuditLogger
-from core.db import execute
+from app.core.audit import AuditLogger
+from app.database.db import execute
 import uuid
 import json
 
@@ -209,21 +209,16 @@ class FinancialWorkflowEngine:
         user_name: str,
         reason: str,
     ) -> str:
-
-       records = execute(
+        records = execute(
             "SELECT * FROM workflow_instances WHERE entity_id = %s",
             (entity_id,),
             fetch=True
         )
-    
         if not records:
             return current_state  # safe fallback
-
         record = records[0]
-
         level = record["approval_level"]
         chain = json.loads(record["approval_chain"])
-
         if level >= len(chain):
             return WorkflowState.APPROVED.value
 

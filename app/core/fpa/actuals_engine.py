@@ -2,7 +2,7 @@
 
 from typing import Dict, Any, Optional
 from decimal import Decimal
-from core.db import execute
+from app.database.db import execute
 from core.governance import GovernanceOrchestrator
 
 

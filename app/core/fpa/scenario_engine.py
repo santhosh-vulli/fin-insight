@@ -1,7 +1,7 @@
 # fpa/scenario_engine.py
 
 from typing import Dict, Any, List
-from core.db import execute
+from app.database.db import execute
 from core.governance import GovernanceOrchestrator
 
 

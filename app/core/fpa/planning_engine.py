@@ -2,8 +2,8 @@
 
 from typing import Dict, Any
 from decimal import Decimal
-from core.db import execute
-from core.governance import GovernanceOrchestrator
+from app.database.db import execute
+from ..governance import GovernanceOrchestrator
 
 
 class PlanningEngine:

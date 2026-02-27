@@ -3,9 +3,9 @@
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 
-from core.workflow import WorkflowState, WorkflowAction
-from core.audit import AuditLogger
-from core.db import execute
+from app.core.workflow import WorkflowState, WorkflowAction
+from app.core.audit import AuditLogger
+from app.database.db import execute
 
 
 class SLAEngine:
