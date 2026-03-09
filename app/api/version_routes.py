@@ -1,46 +1,78 @@
-# app/api/version_routes.py
-
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from typing import List
 from datetime import datetime
 
 from app.database.db import execute
-from app.core.version_engine import VersionEngine
 
 
 router = APIRouter()
 
 
 # ─────────────────────────────────────────────
-# RESPONSE MODEL
+# RESPONSE MODELS
 # ─────────────────────────────────────────────
+
+class VersionResponse(BaseModel):
+    id: str
+    version_number: int
+    status: str
+
 
 class TransitionResponse(BaseModel):
     message: str
     from_status: str
     to_status: str
+
+
 class CloneResponse(BaseModel):
     message: str
     source_version_id: str
     new_version_id: str
     new_version_number: int
 
+
 # ─────────────────────────────────────────────
-# VERSION TRANSITION
+# LIST VERSIONS
 # ─────────────────────────────────────────────
 
-@router.post(
-    "/versions/{version_id}/transition",
-    response_model=TransitionResponse
-)
+@router.get("/versions", response_model=List[VersionResponse])
+def list_versions(scenario_code: str):
+
+    scenario_row = execute("""
+        SELECT id
+        FROM dim_scenario
+        WHERE code = %s
+    """, (scenario_code,), fetch=True)
+
+    if not scenario_row:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+
+    scenario_id = scenario_row[0]["id"]
+
+    rows = execute("""
+        SELECT id, version_number, status
+        FROM dim_version
+        WHERE scenario_id = %s
+        ORDER BY version_number
+    """, (scenario_id,), fetch=True)
+
+    return rows
+
+
+# ─────────────────────────────────────────────
+# TRANSITION VERSION
+# ─────────────────────────────────────────────
+
+@router.post("/versions/{version_id}/transition",
+             response_model=TransitionResponse)
 def transition_version(version_id: str, new_status: str):
 
-    # Fetch version
     row = execute("""
         SELECT id, status
         FROM dim_version
         WHERE id = %s
-    """, (version_id.strip(),), fetch=True)
+    """, (version_id,), fetch=True)
 
     if not row:
         raise HTTPException(status_code=404, detail="Version not found")
@@ -49,42 +81,38 @@ def transition_version(version_id: str, new_status: str):
 
     engine = VersionEngine()
 
-    # Validate transition
     try:
         engine.validate_transition(current_status, new_status)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # Prepare metadata updates
     update_fields = engine.apply_transition_metadata(row[0], new_status)
 
     set_clause = ", ".join([f"{k} = %s" for k in update_fields.keys()])
     values = list(update_fields.values())
-    values.append(version_id.strip())
+    values.append(version_id)
 
-    try:
-        execute(f"""
-            UPDATE dim_version
-            SET {set_clause}
-            WHERE id = %s
-        """, tuple(values))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Failed to update version")
+    execute(f"""
+        UPDATE dim_version
+        SET {set_clause}
+        WHERE id = %s
+    """, tuple(values))
 
     return {
         "message": "Version transitioned successfully",
         "from_status": current_status,
         "to_status": new_status
     }
-@router.post(
-    "/versions/{version_id}/clone",
-    response_model=CloneResponse
-)
+
+
+# ─────────────────────────────────────────────
+# CLONE VERSION
+# ─────────────────────────────────────────────
+
+@router.post("/versions/{version_id}/clone",
+             response_model=CloneResponse)
 def clone_version(version_id: str):
 
-    version_id = version_id.strip()
-
-    # 1️⃣ Fetch source version
     row = execute("""
         SELECT id, scenario_id, version_number
         FROM dim_version
@@ -95,9 +123,7 @@ def clone_version(version_id: str):
         raise HTTPException(status_code=404, detail="Source version not found")
 
     scenario_id = row[0]["scenario_id"]
-    source_version_number = row[0]["version_number"]
 
-    # 2️⃣ Determine next version_number
     max_row = execute("""
         SELECT MAX(version_number) AS max_version
         FROM dim_version
@@ -106,7 +132,6 @@ def clone_version(version_id: str):
 
     next_version_number = (max_row[0]["max_version"] or 0) + 1
 
-    # 3️⃣ Create new version (draft)
     new_version = execute("""
         INSERT INTO dim_version (
             scenario_id,
@@ -120,7 +145,6 @@ def clone_version(version_id: str):
 
     new_version_id = new_version[0]["id"]
 
-    # 4️⃣ Copy fact rows
     execute("""
         INSERT INTO fact_financials (
             tenant_id,
@@ -148,4 +172,4 @@ def clone_version(version_id: str):
         "source_version_id": version_id,
         "new_version_id": str(new_version_id),
         "new_version_number": next_version_number
-    }    
+    }
